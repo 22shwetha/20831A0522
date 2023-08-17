@@ -1,0 +1,61 @@
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestTemplate;
+
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+@SpringBootApplication
+public class NumberManagementServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(NumberManagementServiceApplication.class, args);
+    }
+}
+
+@RestController
+class NumberController {
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    @GetMapping("/numbers")
+    public Map<String, List<Integer>> getMergedNumbers(@RequestParam("url") List<String> urls) {
+        List<CompletableFuture<List<Integer>>> futures = new ArrayList<>();
+        
+        for (String url : urls) {
+            CompletableFuture<List<Integer>> future = CompletableFuture.supplyAsync(() -> fetchNumbers(url));
+            futures.add(future);
+        }
+
+        List<Integer> mergedNumbers = new ArrayList<>();
+        
+        for (CompletableFuture<List<Integer>> future : futures) {
+            try {
+                List<Integer> numbers = future.get(500, TimeUnit.MILLISECONDS);
+                mergedNumbers.addAll(numbers);
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                // Ignore URLs that take too long to respond
+            }
+        }
+        
+        Collections.sort(mergedNumbers);
+        return Collections.singletonMap("numbers", mergedNumbers);
+    }
+
+    private List<Integer> fetchNumbers(String url) {
+        List<Integer> numbers = new ArrayList<>();
+        try {
+            Map<String, List<Integer>> response = restTemplate.getForObject(url, Map.class);
+            if (response != null && response.containsKey("numbers")) {
+                numbers.addAll(response.get("numbers"));
+            }
+        } catch (Exception e) {
+            // Handle exceptions if needed
+        }
+        return numbers;
+    }
+}
